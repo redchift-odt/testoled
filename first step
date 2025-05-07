@@ -1,0 +1,171 @@
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_GFX.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+#define SDA_PIN 14
+#define SCK_PIN 13
+#define BUTTON_CHARGE 12
+#define BUTTON_RESET   0
+
+int progress = 0;
+int overloadProgress = 0;
+const int barWidth = SCREEN_WIDTH - 20;
+
+bool chargingComplete = false;
+bool overloadMode = false;
+bool overloadDone = false;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(BUTTON_CHARGE, INPUT_PULLUP);
+  pinMode(BUTTON_RESET, INPUT_PULLUP);
+  Wire.begin(SDA_PIN, SCK_PIN);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("Écran OLED non trouvé"));
+    while (true);
+  }
+
+  startChargingDisplay();
+}
+
+void loop() {
+  bool chargePressed = (digitalRead(BUTTON_CHARGE) == LOW);
+  bool resetPressed = (digitalRead(BUTTON_RESET) == LOW);
+
+  // 🔁 Réinitialisation
+  if (resetPressed) {
+    Serial.println("Réinitialisation complète.");
+    progress = 0;
+    overloadProgress = 0;
+    chargingComplete = false;
+    overloadMode = false;
+    overloadDone = false;
+    startChargingDisplay();
+    delay(300);
+    return;
+  }
+
+  // 🔄 Remplissage de la barre de température
+  if (!chargingComplete && chargePressed) {
+    progress += 2;
+    if (progress >= barWidth) {
+      progress = barWidth;
+      chargingComplete = true;
+      showCompleteAnimation();
+    } else {
+      drawProgressBars();
+    }
+
+    Serial.print("Temperatur: ");
+    Serial.print((progress * 100) / barWidth);
+    Serial.println("%");
+
+    delay(30);
+    return;
+  }
+
+  // 🧨 Passage en mode surchauffe
+  if (chargingComplete && chargePressed && !overloadDone) {
+    overloadMode = true;
+  }
+
+  // 🔺 Remplissage de la barre de surchauffe
+  if (overloadMode && !overloadDone && chargePressed) {
+    overloadProgress += 2;
+    if (overloadProgress >= barWidth) {
+      overloadProgress = barWidth;
+      overloadDone = true;
+      showOverloadAlert();
+    } else {
+      drawProgressBars();
+    }
+
+    Serial.print("Surchauffe: ");
+    Serial.print((overloadProgress * 100) / barWidth);
+    Serial.println("%");
+
+    delay(30);
+    return;
+  }
+
+  // Clignotement de "Surchauffe" si surcharge active
+  if (overloadMode && !overloadDone) {
+    showOverloadAlert();
+  }
+}
+
+// === FONCTIONS ===
+
+void startChargingDisplay() {
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setCursor(0, 0);
+  display.setTextColor(SSD1306_WHITE);
+  display.print("Temperatur");
+  display.display();
+  Serial.println("Temperatur");
+}
+
+void drawProgressBars() {
+  display.clearDisplay();
+
+  // Titre
+  display.setTextSize(2);
+  display.setCursor(0, 0);
+  display.print(overloadMode ? "Surchauffe" : "Temperatur");
+
+  // Affiche uniquement une barre à la fois
+  int yPos = 30; // Position de départ plus bas pour les barres
+
+  if (!overloadMode) {
+    // Barre principale de température
+    display.drawRect(10, yPos, barWidth, 8, SSD1306_WHITE);
+    display.fillRect(10, yPos, progress, 8, SSD1306_WHITE);
+  } else {
+    // Barre de surchauffe
+    display.drawRect(10, yPos, barWidth, 8, SSD1306_WHITE);
+    display.fillRect(10, yPos, overloadProgress, 8, SSD1306_WHITE);
+  }
+
+  display.display();
+}
+
+void showCompleteAnimation() {
+  Serial.println("Complet !");
+  for (int i = 0; i < 3; i++) {
+    display.fillRect(10, 30, barWidth, 8, SSD1306_BLACK);
+    display.drawRect(10, 30, barWidth, 8, SSD1306_WHITE);
+    display.display();
+    delay(200);
+    display.fillRect(10, 30, barWidth, 8, SSD1306_WHITE);
+    display.display();
+    delay(200);
+  }
+
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setCursor(10, 25);
+  display.print("Complet !");
+  display.display();
+}
+
+void showOverloadAlert() {
+  Serial.println("SURCHAUFFE");
+  for (int i = 0; i < 6; i++) {
+    display.clearDisplay();
+    if (i % 2 == 0) {
+      display.setTextSize(2);
+      display.setCursor(5, 20);
+      display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+      display.println("SURCHAUFFE");
+    }
+    display.display();
+    delay(250);
+  }
+}
