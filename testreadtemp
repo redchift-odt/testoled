@@ -1,0 +1,94 @@
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_GFX.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+#define SDA_PIN 14
+#define SCK_PIN 13
+#define THERMISTOR_PIN 34  // GPIO34 (D34)
+
+// Paramètres du pont diviseur et de la thermistance
+const float SERIES_RESISTOR = 10000.0;
+const float NOMINAL_RESISTANCE = 100000.0;
+const float NOMINAL_TEMPERATURE = 25.0;
+const float BETA_COEFFICIENT = 3950.0;
+const int ADC_MAX = 4095;
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin(SDA_PIN, SCK_PIN);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("Erreur écran OLED");
+    while (true);
+  }
+
+  display.clearDisplay();
+  display.display();
+}
+
+void loop() {
+  float temperatureC = readThermistorTemperature();
+  drawTemperatureBar(temperatureC);
+  Serial.print("Température: ");
+  Serial.print(temperatureC);
+  Serial.println(" °C");
+  delay(500);
+}
+
+float readThermistorTemperature() {
+  int adcValue = analogRead(THERMISTOR_PIN);
+  float voltage = adcValue * 3.3 / ADC_MAX;
+
+  float resistance = SERIES_RESISTOR * ((3.3 / voltage) - 1);
+  float steinhart;
+  steinhart = resistance / NOMINAL_RESISTANCE;
+  steinhart = log(steinhart);
+  steinhart /= BETA_COEFFICIENT;
+  steinhart += 1.0 / (NOMINAL_TEMPERATURE + 273.15);
+  steinhart = 1.0 / steinhart;
+  steinhart -= 273.15;
+  return steinhart;
+}
+
+void drawTemperatureBar(float temp) {
+  display.clearDisplay();
+
+  // Titre
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.print("Temp");
+
+  // Cadre
+  int barX = 10;
+  int barY = 30;
+  int barWidth = SCREEN_WIDTH - 20;
+  int barHeight = 12;
+  display.drawRect(barX, barY, barWidth, barHeight, SSD1306_WHITE);
+
+  // Valeur affichée
+  int fillWidth = constrain(map(temp, 0, 80, 0, barWidth), 0, barWidth);
+  display.fillRect(barX, barY, fillWidth, barHeight, SSD1306_WHITE);
+
+  // Graduation
+  for (int i = 0; i <= 8; i++) {
+    int x = barX + (i * (barWidth / 8));
+    display.drawLine(x, barY + barHeight, x, barY + barHeight + 4, SSD1306_WHITE);
+    display.setTextSize(1);
+    display.setCursor(x - 3, barY + barHeight + 5);
+    display.print(i * 10);
+  }
+
+  // Température numérique
+  display.setTextSize(1);
+  display.setCursor(90, 0);
+  display.print(temp, 1);
+  display.print(" C");
+
+  display.display();
+}
